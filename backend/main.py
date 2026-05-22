@@ -55,6 +55,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from backend.services.classifier_service import ClassifierService
 from backend.services.classifier_v2 import classifier_v2
 from backend.services.classifier_v3 import classifier_v3 # V3 Power Model
+from backend.services.onnx_service import onnx_classifier
 from backend.services.ner_service import NERService
 from backend.services.duplicate_service import DuplicateService
 from backend.services.rag_service import RagService
@@ -113,6 +114,45 @@ def detect_semantic_duplicate(text: str, *, company_id: str | None, threshold: f
         duplicate_result["parent_ticket_id"] = duplicate_result.get("duplicate_ticket_id")
         duplicate_result["is_potential_duplicate"] = duplicate_result.get("is_duplicate", False)
         return duplicate_result
+
+
+def classify_ticket_text(text: str) -> dict:
+    """Run the local classifier cascade with ONNX as the offline fallback path."""
+    try:
+        classification_v3_res = classifier_v3.predict(text)
+        if "error" not in classification_v3_res:
+            cat = classification_v3_res.get("Category", {}).get("prediction", "Unknown")
+            sub = classification_v3_res.get("Subcategory", {}).get("prediction", "Unknown")
+            pri = classification_v3_res.get("priority", {}).get("prediction", "Medium")
+            conf = classification_v3_res.get("Category", {}).get("confidence", 0.0)
+
+            from backend.services.classifier_service import TEAM_MAP, AUTO_RESOLVE_SUBS
+            return {
+                "category": cat,
+                "subcategory": sub,
+                "priority": pri,
+                "auto_resolve": sub in AUTO_RESOLVE_SUBS,
+                "assigned_team": TEAM_MAP.get(cat, "General Support"),
+                "confidence": float(conf),
+            }
+    except Exception:
+        traceback.print_exc()
+
+    try:
+        onnx_result = onnx_classifier.predict(text)
+        if onnx_result:
+            return onnx_result
+    except Exception as error:
+        print(f"[ONNX] Fallback classification skipped: {error}")
+
+    try:
+        return classifier_service.predict(text)
+    except Exception:
+        traceback.print_exc()
+        return {
+            "category": "Unknown", "subcategory": "Unknown", "priority": "Medium",
+            "auto_resolve": False, "assigned_team": "General Support", "confidence": 0.0,
+        }
 class TicketRequest(BaseModel):
     text: str
     image_base64: str = ""
@@ -277,6 +317,10 @@ async def lifespan(app: FastAPI):
         rag_service.load()
     except Exception as e:
         print(f"[WARNING] RAG service not loaded: {e}")
+    try:
+        onnx_classifier.load()
+    except Exception as e:
+        print(f"[WARNING] ONNX classifier fallback not loaded: {e}")
     
     if gemini_service:
         print(f"[Startup] Gemini Service: {'Initialized' if gemini_service._initialized else 'FAILED (Key missing or SDK error)'}")
@@ -284,6 +328,7 @@ async def lifespan(app: FastAPI):
         print("[Startup] Gemini Service: NOT LOADED (Import failed)")
 
     print("[Startup] Classifier V2 Shadow: Ready.")
+    print(f"[Startup] ONNX MiniLM Fallback: {'READY' if getattr(onnx_classifier, '_loaded', False) else 'DEGRADED (artifacts missing)'}")
     print("[Startup] Ready.")
     # Strict health checks: fail loudly when core model assets are unavailable.
     # Set ALLOW_DEGRADED_STARTUP=1 to permit degraded startup for local/dev convenience.
@@ -953,36 +998,7 @@ async def analyze_only(request_body: TicketRequest):
     summary = text[:100] + ("…" if len(text) > 100 else "") 
 
     # --- Classification ---
-    try:
-        classification_v3_res = classifier_v3.predict(text)
-        if "error" in classification_v3_res:
-            # Fallback to V1
-            classification = classifier_service.predict(text)
-        else:
-            # Parse V3 output
-            cat = classification_v3_res.get("Category", {}).get("prediction", "Unknown")
-            sub = classification_v3_res.get("Subcategory", {}).get("prediction", "Unknown")
-            pri = classification_v3_res.get("priority", {}).get("prediction", "Medium")
-            conf = classification_v3_res.get("Category", {}).get("confidence", 0.0)
-            
-            from backend.services.classifier_service import TEAM_MAP, AUTO_RESOLVE_SUBS
-            assigned_team = TEAM_MAP.get(cat, "General Support")
-            auto_resolve = sub in AUTO_RESOLVE_SUBS
-            
-            classification = {
-                "category": cat,
-                "subcategory": sub,
-                "priority": pri,
-                "auto_resolve": auto_resolve,
-                "assigned_team": assigned_team,
-                "confidence": float(conf)
-            }
-    except Exception as e:
-        traceback.print_exc()
-        classification = {
-            "category": "Unknown", "subcategory": "Unknown", "priority": "Medium",
-            "auto_resolve": False, "assigned_team": "General Support", "confidence": 0.0,
-        }
+    classification = classify_ticket_text(text)
 
     timeline["ai_analyzed"] = get_now_ist()
     timeline["triaged"] = get_now_ist()
@@ -1128,33 +1144,7 @@ async def analyze_stream(request_body: TicketRequest):
         # 3. Classification
         yield f"data: {json.dumps({'step': 'Detecting category and priority', 'status': 'in_progress'})}\n\n"
         await asyncio.sleep(0.2)
-        try:
-            classification_v3_res = classifier_v3.predict(text)
-            if "error" in classification_v3_res:
-                classification = classifier_service.predict(text)
-            else:
-                cat = classification_v3_res.get("Category", {}).get("prediction", "Unknown")
-                sub = classification_v3_res.get("Subcategory", {}).get("prediction", "Unknown")
-                pri = classification_v3_res.get("priority", {}).get("prediction", "Medium")
-                conf = classification_v3_res.get("Category", {}).get("confidence", 0.0)
-                
-                from backend.services.classifier_service import TEAM_MAP, AUTO_RESOLVE_SUBS
-                assigned_team = TEAM_MAP.get(cat, "General Support")
-                auto_resolve = sub in AUTO_RESOLVE_SUBS
-                
-                classification = {
-                    "category": cat,
-                    "subcategory": sub,
-                    "priority": pri,
-                    "auto_resolve": auto_resolve,
-                    "assigned_team": assigned_team,
-                    "confidence": float(conf)
-                }
-        except Exception as e:
-            classification = {
-                "category": "Unknown", "subcategory": "Unknown", "priority": "Medium",
-                "auto_resolve": False, "assigned_team": "General Support", "confidence": 0.0,
-            }
+        classification = classify_ticket_text(text)
         timeline["ai_analyzed"] = get_now_ist()
         timeline["triaged"] = get_now_ist()
 
