@@ -693,43 +693,43 @@ async def save_ticket(request_body: TicketSaveRequest):
         raise HTTPException(status_code=500, detail="Supabase connection not initialized.")
 
     logger = logging.getLogger(__name__)
+    final_data = request_body.model_dump()
+
+    # Resolve tenant linkage from user profile with authorization validation.
+    profile = {}
+    if request_body.user_id:
+        try:
+            profile_res = (
+                supabase.table("profiles")
+                .select("company_id, company")
+                .eq("id", request_body.user_id)
+                .single()
+                .execute()
+            )
+            profile = profile_res.data or {}
+            if not profile:
+                raise HTTPException(status_code=404, detail="User profile not found")
+        except HTTPException:
+            raise
+        except Exception as profile_error:
+            logger.error(f"Tenant resolution error for user {request_body.user_id}: {profile_error}")
+            raise HTTPException(status_code=503, detail="Failed to resolve tenant linkage") from profile_error
+
+    # Validate tenant consistency and authorization.
+    profile_company_id = profile.get("company_id")
+    if final_data.get("company_id"):
+        # User provided company_id: verify it matches their profile.
+        if profile_company_id and final_data["company_id"] != profile_company_id:
+            logger.warning(f"Tenant mismatch: user {request_body.user_id} attempted {final_data['company_id']}, assigned to {profile_company_id}")
+            raise HTTPException(status_code=403, detail="User not authorized for this tenant")
+    elif profile_company_id:
+        # Backfill company_id from profile.
+        final_data["company_id"] = profile_company_id
+    elif request_body.user_id:
+        # User has no tenant assignment.
+        raise HTTPException(status_code=400, detail="User has no tenant assignment")
+
     try:
-        final_data = request_body.dict()
-
-        # Resolve tenant linkage from user profile with authorization validation.
-        profile = {}
-        if request_body.user_id:
-            try:
-                profile_res = (
-                    supabase.table("profiles")
-                    .select("company_id, company")
-                    .eq("id", request_body.user_id)
-                    .single()
-                    .execute()
-                )
-                profile = profile_res.data or {}
-                if not profile:
-                    raise HTTPException(status_code=404, detail="User profile not found")
-            except HTTPException:
-                raise
-            except Exception as profile_error:
-                logger.error(f"Tenant resolution error for user {request_body.user_id}: {profile_error}")
-                raise HTTPException(status_code=503, detail="Failed to resolve tenant linkage") from profile_error
-
-        # Validate tenant consistency and authorization.
-        profile_company_id = profile.get("company_id")
-        if final_data.get("company_id"):
-            # User provided company_id: verify it matches their profile.
-            if profile_company_id and final_data["company_id"] != profile_company_id:
-                logger.warning(f"Tenant mismatch: user {request_body.user_id} attempted {final_data['company_id']}, assigned to {profile_company_id}")
-                raise HTTPException(status_code=403, detail="User not authorized for this tenant")
-        elif profile_company_id:
-            # Backfill company_id from profile.
-            final_data["company_id"] = profile_company_id
-        elif request_body.user_id:
-            # User has no tenant assignment.
-            raise HTTPException(status_code=400, detail="User has no tenant assignment")
-
         # Backfill company name if missing.
         if not final_data.get("company") and profile.get("company"):
             final_data["company"] = profile["company"]
@@ -1091,7 +1091,7 @@ async def analyze_only(request_body: TicketRequest):
         decision_factors=decision_factors,
         image_description=gemini_analysis["image_description"],
         ocr_text=gemini_analysis["ocr_text"],
-        highlights=entities, # Use entities as highlights for now
+        highlights=[e.get("text", "") for e in entities], # Use entity texts as highlights for now
         timeline=timeline,
         env_metadata=env_metadata,
         is_potential_duplicate=dup_result.get("is_potential_duplicate", False),
@@ -1222,7 +1222,7 @@ async def analyze_stream(request_body: TicketRequest):
             "decision_factors": decision_factors,
             "image_description": gemini_analysis["image_description"],
             "ocr_text": gemini_analysis["ocr_text"],
-            "highlights": entities,
+            "highlights": [e.get("text", "") for e in entities],
             "timeline": timeline,
             "env_metadata": env_metadata,
             "is_potential_duplicate": dup_result.get("is_potential_duplicate", False),
