@@ -52,7 +52,8 @@ try:
         print("[ERROR] SUPABASE_URL or SUPABASE_SERVICE_KEY not set in backend/.env")
         supabase = None
     else:
-        supabase = create_client(url, key)
+        from backend.auth.crypto import wrap_client
+        supabase = wrap_client(create_client(url, key))
 except (ImportError, Exception) as e:
     print(f"[WARNING] Supabase initialization failed: {e}")
     supabase = None
