@@ -212,6 +212,26 @@ def calculate_sla_response_at(priority: str) -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=hours)
 
 
+def classify_sla_status(sla_breach_at: str | None) -> str:
+    """Return 'BREACHED', 'WARNING', or 'ACTIVE' based on the breach time."""
+    if not sla_breach_at:
+        return "ACTIVE"
+    try:
+        clean_val = str(sla_breach_at).replace("Z", "+00:00")
+        deadline = datetime.datetime.fromisoformat(clean_val)
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=datetime.timezone.utc)
+    except Exception:
+        return "ACTIVE"
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if deadline <= now:
+        return "BREACHED"
+    if deadline - now <= datetime.timedelta(hours=1):
+        return "WARNING"
+    return "ACTIVE"
+
+
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
