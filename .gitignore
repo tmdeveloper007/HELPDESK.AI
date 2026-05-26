@@ -4,7 +4,10 @@ __pycache__/
 *$py.class
 venv/
 env/
-.env
+# Ignore all env files anywhere in the repo
+**/.env
+**/.env.*
+
 
 # Models (Keep them if they are small, but here they are large. 
 # We should probably only keep the ones we actually use if possible, 

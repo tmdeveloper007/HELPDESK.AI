@@ -85,7 +85,8 @@ jobs:
             slowapi \
             supabase \
             apscheduler \
-            python-dotenv
+            python-dotenv \
+            prometheus-client
 
       - name: Smoke-test backend import (degraded mode allowed)
         env:

@@ -47,7 +47,6 @@ export default function useWebSocket(companyId) {
   const companyIdRef = useRef(companyId);
 
   // Keep a ref to latest companyId so the effect closure always has it
-  companyIdRef.current = companyId;
 
   // ---- Cleanup helpers ---------------------------------------------------
 
@@ -89,7 +88,26 @@ export default function useWebSocket(companyId) {
     }, PING_INTERVAL_MS);
   }, []);
 
-  // ---- WebSocket lifecycle -----------------------------------------------
+  // ---- WebSocket lifecycle & Reconnection ---------------------------------
+
+  const connectRef = useRef(null);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!mountedRef.current || !companyIdRef.current) return;
+
+    const attempt = reconnectAttemptRef.current;
+    const delay = Math.min(
+      INITIAL_RECONNECT_DELAY_MS * Math.pow(2, attempt),
+      MAX_RECONNECT_DELAY_MS
+    );
+    reconnectAttemptRef.current = attempt + 1;
+
+    setConnectionError(`Reconnecting in ${Math.round(delay / 1000)}s...`);
+
+    reconnectTimerRef.current = setTimeout(() => {
+      if (mountedRef.current && connectRef.current) connectRef.current();
+    }, delay);
+  }, []);
 
   const connect = useCallback(() => {
     cleanup();
@@ -153,25 +171,10 @@ export default function useWebSocket(companyId) {
     socket.onerror = () => {
       // onclose fires immediately after onerror, so reconnect is handled there
     };
-  }, [cleanup, clearTimers, startHeartbeat]);
+  }, [cleanup, clearTimers, startHeartbeat, scheduleReconnect]);
 
-  // ---- Reconnection with exponential backoff -----------------------------
-
-  const scheduleReconnect = useCallback(() => {
-    if (!mountedRef.current || !companyIdRef.current) return;
-
-    const attempt = reconnectAttemptRef.current;
-    const delay = Math.min(
-      INITIAL_RECONNECT_DELAY_MS * Math.pow(2, attempt),
-      MAX_RECONNECT_DELAY_MS
-    );
-    reconnectAttemptRef.current = attempt + 1;
-
-    setConnectionError(`Reconnecting in ${Math.round(delay / 1000)}s...`);
-
-    reconnectTimerRef.current = setTimeout(() => {
-      if (mountedRef.current) connect();
-    }, delay);
+  useEffect(() => {
+    connectRef.current = connect;
   }, [connect]);
 
   // ---- Send helper -------------------------------------------------------
