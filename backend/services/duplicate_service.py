@@ -210,7 +210,16 @@ class DuplicateService:
         """
         self.load()
         
-        # If model is not available, return no duplicate found
+        if not text or not text.strip():
+            return {
+                "is_duplicate": False,
+                "duplicate_ticket_id": None,
+                "similarity": 0.0,
+            }
+
+        if threshold is not None and (threshold < 0 or threshold > 1):
+            raise ValueError(f"Threshold must be between 0 and 1, got {threshold}")
+
         if not self.is_available():
             print("[DuplicateService] DEGRADED: Duplicate check skipped (model not available)")
             return {
