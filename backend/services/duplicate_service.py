@@ -114,7 +114,13 @@ class DuplicateService:
         """
         self.load()
         
-        # If model is not available, return no duplicate found
+        if not text or not text.strip():
+            return {
+                "is_duplicate": False,
+                "duplicate_ticket_id": None,
+                "similarity": 0.0,
+            }
+
         if not self.is_available():
             print("[DuplicateService] DEGRADED: Duplicate check skipped (model not available)")
             return {
