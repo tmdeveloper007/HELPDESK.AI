@@ -58,6 +58,7 @@ function AdminSignup() {
         if (!/[a-z]/.test(pw)) return 'Password must contain at least one lowercase letter (a-z).';
         if (!/[A-Z]/.test(pw)) return 'Password must contain at least one uppercase letter (A-Z).';
         if (!/[0-9]/.test(pw)) return 'Password must contain at least one number (0-9).';
+        if (!/[^A-Za-z0-9]/.test(pw)) return 'Password must contain at least one special character.';
         return null; // valid
     };
 
@@ -117,6 +118,13 @@ function AdminSignup() {
         e.preventDefault();
         if (!formData.agreedToTerms || !formData.isAuthorized) {
             setError("You must agree to the terms and authorize company registration.");
+            return;
+        }
+
+        const pwError = validatePassword(formData.password);
+        if (pwError) {
+            setError(pwError);
+            setStep(1);
             return;
         }
 
@@ -332,7 +340,7 @@ function AdminSignup() {
                         </motion.div>
                     )}
 
-                    <form onSubmit={handleSubmit}>
+                    <form onSubmit={(e) => { e.preventDefault(); if (step === 3) handleSubmit(e); else nextStep(); }}>
                         <AnimatePresence mode="wait">
                             {/* STEP 1: PERSONAL INFO */}
                             {step === 1 && (
@@ -451,6 +459,7 @@ function AdminSignup() {
                                                         { label: 'Uppercase (A-Z)', ok: /[A-Z]/.test(formData.password) },
                                                         { label: 'Lowercase (a-z)', ok: /[a-z]/.test(formData.password) },
                                                         { label: 'Number (0-9)', ok: /[0-9]/.test(formData.password) },
+                                                        { label: 'Special Char', ok: /[^A-Za-z0-9]/.test(formData.password) },
                                                     ].map(({ label, ok }) => (
                                                         <span key={label} className={`text-[10px] font-semibold flex items-center gap-1 transition-colors ${
                                                             formData.password ? (ok ? 'text-emerald-600' : 'text-red-400') : 'text-gray-300'

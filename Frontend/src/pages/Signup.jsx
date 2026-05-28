@@ -109,6 +109,7 @@ function Signup() {
       if (!/[a-z]/.test(pw)) return 'Password must contain at least one lowercase letter (a-z).';
       if (!/[A-Z]/.test(pw)) return 'Password must contain at least one uppercase letter (A-Z).';
       if (!/[0-9]/.test(pw)) return 'Password must contain at least one number (0-9).';
+      if (!/[^A-Za-z0-9]/.test(pw)) return 'Password must contain at least one special character.';
       return null;
     };
 
@@ -339,6 +340,7 @@ function Signup() {
                       { label: 'Uppercase (A-Z)', ok: /[A-Z]/.test(password) },
                       { label: 'Lowercase (a-z)', ok: /[a-z]/.test(password) },
                       { label: 'Number (0-9)', ok: /[0-9]/.test(password) },
+                      { label: 'Special Char', ok: /[^A-Za-z0-9]/.test(password) },
                     ].map(({ label, ok }) => (
                       <span key={label} className={`text-[10px] font-semibold flex items-center gap-1 transition-colors ${
                         ok ? 'text-emerald-600' : 'text-red-400'
