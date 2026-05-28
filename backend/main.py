@@ -28,7 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.encoders import jsonable_encoder
 import asyncio
 from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 
 # Load environment variables from backend/.env
@@ -90,6 +90,13 @@ class TicketRequest(BaseModel):
     image_url: str | None = None
     confidence_threshold: float = 0.20
     duplicate_sensitivity: float = 0.85
+
+    @field_validator("image_base64")
+    @classmethod
+    def validate_image_base64(cls, v: str) -> str:
+        if v and len(v) > 10 * 1024 * 1024:
+            raise ValueError("image_base64 exceeds maximum allowed size (10 MB)")
+        return v
 
 class TicketSaveRequest(BaseModel):
     user_id: str
@@ -722,7 +729,7 @@ async def analyze_ticket(request_body: TicketRequest, request: Request):
     local_ocr_text = ""
     if request_body.image_base64 and ocr_service:
         print("[AI] Extracting text via local OCR...")
-        local_ocr_text = ocr_service.extract_text(request_body.image_base64)
+        local_ocr_text = await ocr_service.extract_text(request_body.image_base64)
         if local_ocr_text:
             text = f"{text} {local_ocr_text}".strip()
             print(f"[AI] OCR added {len(local_ocr_text)} chars to context.")
