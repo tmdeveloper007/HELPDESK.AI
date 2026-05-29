@@ -30,6 +30,8 @@ import asyncio
 from pathlib import Path
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Load environment variables from backend/.env
 env_path = Path(__file__).parent / '.env'
@@ -255,8 +257,56 @@ async def lifespan(app: FastAPI):
 
     if strict_mode and not classifier_loaded_flag:
         raise RuntimeError("[Startup-FATAL] Classifier assets not loaded. Set ALLOW_DEGRADED_STARTUP=1 to bypass.")
+    
+    # --- Digest Scheduler ---
+    from backend.services.digest_service import get_weekly_stats, generate_ai_summary, send_digest_email
+    
+    async def digest_job():
+        print("[DigestJob] Starting weekly digest process...")
+        if not supabase:
+            print("[DigestJob] Supabase not initialized, aborting.")
+            return
+            
+        try:
+            # Get companies where digest_enabled is true
+            res = supabase.table("system_settings").select("company_id, digest_enabled").eq("digest_enabled", True).execute()
+            companies = res.data or []
+            
+            for comp in companies:
+                company_id = comp.get("company_id")
+                # Get admins for this company
+                admins_res = supabase.table("profiles").select("email").eq("company_id", company_id).eq("role", "admin").execute()
+                admins = admins_res.data or []
+                
+                if not admins:
+                    continue
+                    
+                # Fetch stats (we might want company specific stats in future, but based on issue description, just call the service)
+                stats = get_weekly_stats() 
+                summary = generate_ai_summary(stats)
+                
+                for admin in admins:
+                    email = admin.get("email")
+                    if email:
+                        send_digest_email(email, stats, summary)
+                        
+            print(f"[DigestJob] Successfully processed {len(companies)} companies.")
+        except Exception as e:
+            print(f"[DigestJob] Error in scheduled job: {e}")
+
+    app.state.scheduler = AsyncIOScheduler()
+    app.state.scheduler.add_job(
+        digest_job, 
+        CronTrigger(day_of_week='mon', hour=8, minute=0, timezone='UTC'), 
+        id="weekly_digest"
+    )
+    app.state.scheduler.start()
+    print("[Startup] Scheduled weekly digest job.")
+    
     yield
     print("[Shutdown] Cleaning up ...")
+    if hasattr(app.state, "scheduler"):
+        app.state.scheduler.shutdown()
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +463,49 @@ async def readiness_check():
         status_code=503,
         content=jsonable_encoder(ReadinessResponse(status="not_ready", checks=checks)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Weekly Digest endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/digest/send-now")
+async def send_digest_now():
+    """Manual trigger to send the weekly digest email."""
+    from backend.services.digest_service import get_weekly_stats, generate_ai_summary, send_digest_email
+    
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase connection not initialized")
+        
+    try:
+        # For manual test, get the first admin or a specific user
+        # To match the requirements simply: send to all admins with digest_enabled=True
+        res = supabase.table("system_settings").select("company_id, digest_enabled").eq("digest_enabled", True).execute()
+        companies = res.data or []
+        
+        sent_count = 0
+        for comp in companies:
+            company_id = comp.get("company_id")
+            admins_res = supabase.table("profiles").select("email").eq("company_id", company_id).eq("role", "admin").execute()
+            admins = admins_res.data or []
+            
+            if not admins:
+                continue
+                
+            stats = get_weekly_stats() 
+            summary = generate_ai_summary(stats)
+            
+            for admin in admins:
+                email = admin.get("email")
+                if email:
+                    send_digest_email(email, stats, summary)
+                    sent_count += 1
+                    
+        return {"status": "success", "emails_sent": sent_count}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 class TroubleshootRequest(BaseModel):

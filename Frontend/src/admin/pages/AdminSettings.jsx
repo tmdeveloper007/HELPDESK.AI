@@ -10,6 +10,8 @@ import {
 import useAdminStore from '../store/adminStore';
 import { Card, CardContent } from "../../components/ui/card";
 import { Select } from "../../components/ui/select";
+import useAuthStore from '../../store/authStore';
+import { supabase } from '../../lib/supabaseClient';
 
 /**
  * AdminSettings Page
@@ -17,11 +19,39 @@ import { Select } from "../../components/ui/select";
  */
 const AdminSettings = () => {
     const { settings, updateSettings } = useAdminStore();
+    const { profile } = useAuthStore();
+    const [digestEnabled, setDigestEnabled] = React.useState(false);
+
+    React.useEffect(() => {
+        const fetchSettings = async () => {
+            if (profile?.company_id) {
+                const { data } = await supabase
+                    .table('system_settings')
+                    .select('digest_enabled')
+                    .eq('company_id', profile.company_id)
+                    .single();
+                if (data) setDigestEnabled(data.digest_enabled);
+            }
+        };
+        fetchSettings();
+    }, [profile]);
 
     // Handlers
     const handleChange = (key, value) => {
         updateSettings({ [key]: value });
     };
+
+    const handleDigestToggle = async () => {
+        const newVal = !digestEnabled;
+        setDigestEnabled(newVal);
+        if (profile?.company_id) {
+            await supabase
+                .table('system_settings')
+                .update({ digest_enabled: newVal })
+                .eq('company_id', profile.company_id);
+        }
+    };
+
 
     return (
         <div className="max-w-4xl mx-auto py-6 space-y-10 pb-20 animate-in fade-in duration-700">
@@ -151,6 +181,20 @@ const AdminSettings = () => {
                                 className={`w-14 h-8 rounded-full relative transition-all duration-300 shadow-inner shrink-0 ${settings.emailNotifications ? 'bg-amber-500' : 'bg-slate-200'}`}
                             >
                                 <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all duration-300 shadow-md ${settings.emailNotifications ? 'right-1' : 'left-1'}`}></div>
+                            </button>
+                        </div>
+
+                        {/* Weekly Digest toggle */}
+                        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                            <div>
+                                <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">Weekly Digest Email</h4>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Receive weekly performance reports. Last digest sent: Monday, May 26</p>
+                            </div>
+                            <button
+                                onClick={handleDigestToggle}
+                                className={`w-14 h-8 rounded-full relative transition-all duration-300 shadow-inner shrink-0 ${digestEnabled ? 'bg-amber-500' : 'bg-slate-200'}`}
+                            >
+                                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all duration-300 shadow-md ${digestEnabled ? 'right-1' : 'left-1'}`}></div>
                             </button>
                         </div>
 
