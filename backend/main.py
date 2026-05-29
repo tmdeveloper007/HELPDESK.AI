@@ -728,6 +728,10 @@ app.add_middleware(
 
 app.include_router(auth_cookie_router)
 
+# Voice-to-Ticket router (Issue #207)
+from backend.routes.voice import router as voice_router
+app.include_router(voice_router)
+
 
 # ---------------------------------------------------------------------------
 # Root & Health check
@@ -2108,20 +2112,6 @@ async def sla_ticket_detail(ticket_id: str):
         "escalations": escalations,
     }
 
-
-from fastapi import UploadFile, File
-
-@app.post("/api/voice/transcribe")
-async def api_voice_transcribe(audio: UploadFile = File(...)):
-    """Transcribes an audio file into text using OpenAI Whisper asynchronously."""
-    from backend.services.voice_service import transcribe_audio_async
-    try:
-        content = await audio.read()
-        result = await transcribe_audio_async(content)
-        return result
-    except Exception as e:
-        logger.error(f"Voice transcription endpoint error: {e}")
-        raise HTTPException(status_code=500, detail=f"Voice transcription failed: {str(e)}")
 
 
 @app.get("/metrics")
