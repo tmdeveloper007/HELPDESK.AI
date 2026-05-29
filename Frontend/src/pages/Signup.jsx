@@ -163,8 +163,13 @@ function Signup() {
       }
 
     } catch (err) {
-      console.error("Signup component error:", err);
       let errMsg = err.message || "Signup failed. Please try again.";
+      // Handle Supabase password validation errors
+      if (errMsg.includes("Password should contain") || errMsg.includes("at least one character")) {
+        errMsg = "Password must contain at least: 8 characters, one uppercase letter (A-Z), one lowercase letter (a-z), and one number (0-9).";
+      }
+      console.error("Signup component error:", err);
+      
       if (errMsg.toLowerCase().includes("failed to fetch")) {
         errMsg = "Network Error: Failed to fetch. This usually happens if your browser's ad-blocker is blocking Supabase requests. Please try disabling your ad-blocker for this site and refresh!";
       }
