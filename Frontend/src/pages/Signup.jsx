@@ -108,6 +108,15 @@ function Signup() {
     e.preventDefault();
     setError("");
 
+    // Password complexity validator — mirrors Supabase's policy
+    const validatePassword = (pw) => {
+      if (pw.length < 8) return 'Password must be at least 8 characters long.';
+      if (!/[a-z]/.test(pw)) return 'Password must contain at least one lowercase letter (a-z).';
+      if (!/[A-Z]/.test(pw)) return 'Password must contain at least one uppercase letter (A-Z).';
+      if (!/[0-9]/.test(pw)) return 'Password must contain at least one number (0-9).';
+      return null;
+    };
+
     if (!email || !password || !confirmPassword || !fullName) {
       setError("All fields are required.");
       return;
@@ -320,7 +329,7 @@ function Signup() {
               <div className="relative">
                 <label className="block mb-2" style={labelStyle}>Password</label>
                 <div className="relative">
-                  <input type={showPassword ? "text" : "password"} placeholder="Min 6 chars" style={{ ...inputStyle, paddingRight: '44px' }} onFocus={inputFocus} onBlur={inputBlur}
+                  <input type={showPassword ? "text" : "password"} placeholder="Min 8 chars" style={{ ...inputStyle, paddingRight: '44px' }} onFocus={inputFocus} onBlur={inputBlur}
                     value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

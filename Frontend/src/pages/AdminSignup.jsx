@@ -61,6 +61,15 @@ function AdminSignup() {
         }
     }, [user, profile, navigate]);
 
+    // Password complexity validator — mirrors Supabase's policy
+    const validatePassword = (pw) => {
+        if (pw.length < 8) return 'Password must be at least 8 characters long.';
+        if (!/[a-z]/.test(pw)) return 'Password must contain at least one lowercase letter (a-z).';
+        if (!/[A-Z]/.test(pw)) return 'Password must contain at least one uppercase letter (A-Z).';
+        if (!/[0-9]/.test(pw)) return 'Password must contain at least one number (0-9).';
+        return null; // valid
+    };
+
     // Password strength calculation
     useEffect(() => {
         const pw = formData.password;
@@ -69,9 +78,7 @@ function AdminSignup() {
         if (/[A-Z]/.test(pw)) strength += 25;
         if (/[0-9]/.test(pw)) strength += 25;
         if (/[^A-Za-z0-9]/.test(pw)) strength += 25;
-         
         setPasswordStrength(strength);
- 
     }, [formData.password]);
 
     const handleChange = (e) => {
@@ -440,6 +447,8 @@ function AdminSignup() {
                                                         <span>Strength: {getStrengthText()}</span>
                                                         <span>{passwordStrength}%</span>
                                                     </div>
+                                                )}
+                                                {formData.password && (
                                                     <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
                                                         <motion.div
                                                             className={`h-full ${getStrengthColor()}`}
@@ -454,7 +463,7 @@ function AdminSignup() {
                                                         {passwordWarning || "Password requirements met."}
                                                     </div>
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">

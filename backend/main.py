@@ -441,6 +441,7 @@ class TicketResponse(BaseModel):
     decision_factors: list[str] = []
     image_description: str = ""
     ocr_text: str = ""
+    image_url: str | None = None
     highlights: list[str] = []
     timeline: dict = {} # Map of step_name: timestamp
     env_metadata: dict = {} # IP, Hostname, Browser/OS
@@ -1099,7 +1100,7 @@ def trigger_webhook_for_new_ticket(company_id: str, ticket: dict) -> None:
 
 
 @app.post("/tickets/save")
-async def save_ticket(request_body: TicketSaveRequest):
+async def save_ticket(request_body: TicketSaveRequest, user: dict = Depends(get_current_user)):
     """
     OFFICIAL PERSISTENCE: Saves the analyzed ticket to Supabase.
     This is called AFTER the user confirms the analysis results.
@@ -1332,6 +1333,8 @@ async def save_ticket(request_body: TicketSaveRequest):
             )
         return response
 
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
