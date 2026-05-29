@@ -924,8 +924,20 @@ async def analyze_bug(request: BugReportAnalysisRequest):
 CORRECTIONS_LOG_PATH = Path(__file__).parent / "data" / "corrections_log.json"
 
 @app.post("/ai/log_correction")
-async def log_correction(raw_request: Request):
+async def log_correction(raw_request: Request, user: dict = Depends(get_current_user)):
     """Log an admin correction when the AI prediction differs from the human decision."""
+    role = (user.get("user_metadata") or {}).get("role", "") or (user.get("app_metadata") or {}).get("role", "")
+    if role not in ("admin", "company_admin"):
+        raise HTTPException(status_code=403, detail="Only admins can log corrections")
+
+    profile = {}
+    if supabase:
+        try:
+            profile_res = supabase.table("profiles").select("company_id, company").eq("id", user["id"]).single().execute()
+            profile = profile_res.data or {}
+        except Exception:
+            pass
+
     try:
         body = await raw_request.json()
     except Exception as e:
@@ -940,6 +952,18 @@ async def log_correction(raw_request: Request):
     confidence = float(body.get("confidence") or 0.0)
     original_prediction = body.get("original_prediction") or {}
     corrected_prediction = body.get("corrected_prediction") or {}
+
+    if supabase and ticket_id != "unknown":
+        try:
+            ticket_res = supabase.table("tickets").select("id, company_id").eq("id", ticket_id).single().execute()
+            if not ticket_res.data:
+                return {"status": "error", "message": "Ticket not found"}
+            ticket_company = ticket_res.data.get("company_id")
+            admin_company = profile.get("company_id")
+            if admin_company and ticket_company and ticket_company != admin_company:
+                return {"status": "error", "message": "Ticket does not belong to your company"}
+        except Exception as e:
+            return {"status": "error", "message": f"Ticket not found"}
 
     # Only log if something actually changed
     changed_fields = [
@@ -958,6 +982,8 @@ async def log_correction(raw_request: Request):
         "corrected_prediction": corrected_prediction,
         "changed_fields": changed_fields,
         "confidence": confidence,
+        "corrected_by": user["id"],
+        "company_id": profile.get("company_id"),
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
     }
 
