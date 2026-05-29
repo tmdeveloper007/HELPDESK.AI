@@ -495,6 +495,18 @@ class AuditLogRecord(BaseModel):
 
 
 
+class SLAPredictRequest(BaseModel):
+    priority: str
+    created_at: str
+    sla_breach_at: str | None = None
+    category: str | None = None
+    assigned_team: str | None = None
+    team_workload: str = "normal"
+    similar_avg_resolution_hours: float | None = None
+    similar_count: int = 0
+    thresholds: dict | None = None
+
+
 class HealthResponse(BaseModel):
     status: str
     classifier_loaded: bool
