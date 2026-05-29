@@ -14,6 +14,8 @@ import traceback
 import warnings
 import logging
 import hashlib
+import re
+import tempfile
 from contextlib import asynccontextmanager
 
 # Suppress harmless PyTorch CPU pin_memory warning
@@ -995,6 +997,26 @@ async def analyze_bug(request: BugReportAnalysisRequest):
 # Admin Correction Logging endpoint
 # ---------------------------------------------------------------------------
 CORRECTIONS_LOG_PATH = Path(__file__).parent / "data" / "corrections_log.json"
+_corrections_lock = asyncio.Lock()
+
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+_PHONE_RE = re.compile(r"\b\d{10,}\b")
+_IP_RE = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
+
+
+def _redact_pii(text: str) -> str:
+    text = _EMAIL_RE.sub("[EMAIL REDACTED]", text)
+    text = _PHONE_RE.sub("[PHONE REDACTED]", text)
+    text = _IP_RE.sub("[IP REDACTED]", text)
+    return text
+
+
+def _atomic_write_json(path: Path, data) -> None:
+    tmp_path = path.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp_path, path)
+
 
 @app.post("/ai/log_correction")
 async def log_correction(raw_request: Request, user: dict = Depends(get_current_user)):
@@ -1014,14 +1036,14 @@ async def log_correction(raw_request: Request, user: dict = Depends(get_current_
     try:
         body = await raw_request.json()
     except Exception as e:
-        print(f"[CORRECTION ERROR] Could not parse request body: {e}")
+        logging.error(f"[CORRECTION ERROR] Could not parse request body: {e}")
         return {"status": "error", "message": "Invalid JSON body"}
 
-    print(f"[CORRECTION RECEIVED] Payload keys: {list(body.keys())}")
+    logging.info(f"[CORRECTION RECEIVED] Payload keys: {list(body.keys())}")
 
     ticket_id = str(body.get("ticket_id", "unknown"))
-    original_text = str(body.get("original_text", ""))
-    ocr_text = str(body.get("ocr_text", ""))
+    original_text = _redact_pii(str(body.get("original_text", "")))
+    ocr_text = _redact_pii(str(body.get("ocr_text", "")))
     confidence = float(body.get("confidence") or 0.0)
     original_prediction = body.get("original_prediction") or {}
     corrected_prediction = body.get("corrected_prediction") or {}
@@ -1061,22 +1083,21 @@ async def log_correction(raw_request: Request, user: dict = Depends(get_current_
     }
 
     try:
-        if CORRECTIONS_LOG_PATH.exists() and CORRECTIONS_LOG_PATH.stat().st_size > 2:
-            with open(CORRECTIONS_LOG_PATH, "r", encoding="utf-8") as f:
-                logs = json.load(f)
-        else:
-            logs = []
+        async with _corrections_lock:
+            if CORRECTIONS_LOG_PATH.exists() and CORRECTIONS_LOG_PATH.stat().st_size > 2:
+                with open(CORRECTIONS_LOG_PATH, "r", encoding="utf-8") as f:
+                    logs = json.load(f)
+            else:
+                logs = []
 
-        logs.append(entry)
+            logs.append(entry)
+            _atomic_write_json(CORRECTIONS_LOG_PATH, logs)
 
-        with open(CORRECTIONS_LOG_PATH, "w", encoding="utf-8") as f:
-            json.dump(logs, f, indent=2)
-
-        print(f"[CORRECTION SAVED] Ticket ID: {ticket_id} | Changed: {changed_fields}")
+        logging.info(f"[CORRECTION SAVED] Ticket ID: {ticket_id} | Changed: {changed_fields}")
         return {"status": "saved", "changed_fields": changed_fields}
 
     except Exception as e:
-        print(f"[CORRECTION ERROR] Could not save: {e}")
+        logging.error(f"[CORRECTION ERROR] Could not save: {e}")
         return {"status": "error", "message": str(e)}
 
 
