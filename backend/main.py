@@ -91,6 +91,13 @@ class TicketRequest(BaseModel):
     confidence_threshold: float = 0.20
     duplicate_sensitivity: float = 0.85
 
+    @field_validator("confidence_threshold", "duplicate_sensitivity")
+    @classmethod
+    def validate_threshold_range(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"Value must be between 0.0 and 1.0, got {v}")
+        return v
+
 class TicketSaveRequest(BaseModel):
     user_id: str
     subject: str
@@ -536,15 +543,24 @@ async def log_correction(raw_request: Request):
 # Ticket operations (Now via Supabase)
 # ---------------------------------------------------------------------------
 @app.get("/tickets")
-async def get_tickets(company_id: str | None = None):
-    """Fetch persistent tickets from Supabase."""
+async def get_tickets(
+    company_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Fetch persistent tickets from Supabase with pagination."""
     if not supabase:
         raise HTTPException(status_code=500, detail="Database connection not initialized")
-    
-    query = supabase.table("tickets").select("*").order("created_at", desc=True)
+
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=400, detail="Limit must be between 1 and 200")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Offset must be non-negative")
+
+    query = supabase.table("tickets").select("*").order("created_at", desc=True).limit(limit).offset(offset)
     if company_id:
         query = query.eq("company_id", company_id)
-        
+
     res = query.execute()
     return res.data
 
