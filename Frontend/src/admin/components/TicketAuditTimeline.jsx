@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import axios from 'axios';
 import { AlertTriangle, ArrowRight, History, Loader2, ShieldCheck, Sparkles, User } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
@@ -143,6 +143,7 @@ const TicketAuditTimeline = ({ ticketId, companyId }) => {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const mountedRef = useRef(true);
 
     useEffect(() => {
         if (!ticketId || !companyId) {
@@ -151,7 +152,7 @@ const TicketAuditTimeline = ({ ticketId, companyId }) => {
             return undefined;
         }
 
-        let cancelled = false;
+        mountedRef.current = true;
 
         const loadLogs = async () => {
             setLoading(true);
@@ -161,15 +162,15 @@ const TicketAuditTimeline = ({ ticketId, companyId }) => {
                     params: { company_id: companyId }
                 });
 
-                if (!cancelled) {
+                if (mountedRef.current) {
                     setLogs(Array.isArray(data) ? data : []);
                 }
             } catch (err) {
-                if (!cancelled) {
+                if (mountedRef.current) {
                     setError(err?.response?.data?.detail || err.message || 'Failed to load audit history.');
                 }
             } finally {
-                if (!cancelled) setLoading(false);
+                if (mountedRef.current) setLoading(false);
             }
         };
 
@@ -186,13 +187,15 @@ const TicketAuditTimeline = ({ ticketId, companyId }) => {
                     filter: `ticket_id=eq.${ticketId}`
                 },
                 (payload) => {
-                    setLogs((current) => mergeLogs(current, [payload.new]));
+                    if (mountedRef.current) {
+                        setLogs((current) => mergeLogs(current, [payload.new]));
+                    }
                 }
             )
             .subscribe();
 
         return () => {
-            cancelled = true;
+            mountedRef.current = false;
             supabase.removeChannel(channel);
         };
     }, [ticketId, companyId]);
