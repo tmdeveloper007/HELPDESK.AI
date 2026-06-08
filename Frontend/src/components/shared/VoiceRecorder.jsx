@@ -44,10 +44,13 @@ const VoiceRecorder = ({
     const analyserRef = useRef(null);
     const dataArrayRef = useRef(null);
     const animationFrameRef = useRef(null);
+    const mountedRef = useRef(true);
 
-    // Cleanup on unmount
+    // Cleanup on unmount + set mountedRef
     useEffect(() => {
+        mountedRef.current = true;
         return () => {
+            mountedRef.current = false;
             if (timerRef.current) clearInterval(timerRef.current);
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
             if (audioContextRef.current) audioContextRef.current.close();
@@ -128,8 +131,8 @@ const VoiceRecorder = ({
                 audioChunksRef.current = [];
 
                 if (audioBlob.size === 0) {
-                    setError('No audio was recorded. Please try again.');
-                    setIsRecording(false);
+                    if (mountedRef.current) if (mountedRef.current) setError('No audio was recorded. Please try again.');
+                    if (mountedRef.current) setIsRecording(false);
                     return;
                 }
 
@@ -156,19 +159,19 @@ const VoiceRecorder = ({
                     const text = (data.transcribed_text || '').trim();
 
                     if (!text) {
-                        setError('No speech detected. Please speak clearly and try again.');
+                        if (mountedRef.current) setError('No speech detected. Please speak clearly and try again.');
                         return;
                     }
 
-                    setTranscript(text);
+                    if (mountedRef.current) setTranscript(text);
                     if (onTranscriptionComplete) {
                         onTranscriptionComplete(text);
                     }
                 } catch (err) {
                     console.error('Voice transcription error:', err);
-                    setError(err.message || 'Failed to transcribe audio. Please try again.');
+                    if (mountedRef.current) setError(err.message || 'Failed to transcribe audio. Please try again.');
                 } finally {
-                    setIsProcessing(false);
+                    if (mountedRef.current) setIsProcessing(false);
                 }
             };
 
@@ -190,11 +193,11 @@ const VoiceRecorder = ({
         } catch (err) {
             console.error('Microphone access error:', err);
             if (err.name === 'NotAllowedError') {
-                setError('Microphone access denied. Please allow microphone permissions and try again.');
+                if (mountedRef.current) setError('Microphone access denied. Please allow microphone permissions and try again.');
             } else if (err.name === 'NotFoundError') {
-                setError('No microphone detected. Please connect a microphone and try again.');
+                if (mountedRef.current) setError('No microphone detected. Please connect a microphone and try again.');
             } else {
-                setError(`Could not access microphone: ${err.message}`);
+                if (mountedRef.current) setError(`Could not access microphone: ${err.message}`);
             }
         }
     };
