@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Shield, ShieldCheck, Mail, Database, Download, Trash2, Calendar,
@@ -34,11 +34,12 @@ const PrivacySettings = () => {
     const [updatingPrefs, setUpdatingPrefs] = useState(false);
     const [exportLoading, setExportLoading] = useState(null); // 'json' | 'csv' | null
     const [deleteLoading, setDeleteLoading] = useState(false);
-    
+    const mountedRef = useRef(true);
+
     // Check DNT Browser signal
     const isDNTEnabled = navigator.doNotTrack === "1" || window.doNotTrack === "1" || navigator.msDoNotTrack === "1";
 
-    const fetchPreferences = async () => {
+    const fetchPreferences = useCallback(async () => {
         if (!user) return;
         setLoadingPrefs(true);
         try {
@@ -50,44 +51,49 @@ const PrivacySettings = () => {
                     "Authorization": token ? `Bearer ${token}` : ""
                 }
             });
-            if (response.ok) {
+            if (response.ok && mountedRef.current) {
                 const data = await response.json();
                 setPreferences(data);
             }
         } catch (err) {
             console.error("Failed to load privacy preferences:", err);
         } finally {
-            setLoadingPrefs(false);
+            if (mountedRef.current) setLoadingPrefs(false);
         }
-    };
+    }, [user]);
 
-    const fetchPrivacyRequests = async () => {
+    const fetchPrivacyRequests = useCallback(async () => {
         if (!user) return;
         setLoadingRequests(true);
         try {
             const session = await supabase.auth.getSession();
             const token = session.data.session?.access_token;
-
+            
             const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/privacy/requests`, {
                 headers: {
                     "Authorization": token ? `Bearer ${token}` : ""
                 }
             });
-            if (response.ok) {
+            if (response.ok && mountedRef.current) {
                 const data = await response.json();
                 setPrivacyRequests(data);
             }
         } catch (err) {
             console.error("Failed to load privacy requests:", err);
         } finally {
-            setLoadingRequests(false);
+            if (mountedRef.current) setLoadingRequests(false);
         }
-    };
+    }, [user]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
 
     useEffect(() => {
         fetchPreferences();
         fetchPrivacyRequests();
-    }, [user]);
+    }, [fetchPreferences, fetchPrivacyRequests]);
 
     const handlePreferenceToggle = (key) => {
         setPreferences(prev => ({
