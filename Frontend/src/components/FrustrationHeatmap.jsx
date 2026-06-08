@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { API_CONFIG } from "../../config";
 
@@ -10,6 +10,12 @@ export default function FrustrationHeatmap({ companyId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const BACKEND = API_CONFIG.BACKEND_URL;
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!companyId) return;
@@ -22,13 +28,13 @@ export default function FrustrationHeatmap({ companyId }) {
           headers: { Authorization: `Bearer ${token}` },
         });
         const result = await res.json();
-        if (result.success) {
+        if (result.success && mountedRef.current) {
           setData(result);
         }
       } catch (error) {
         console.error("[FrustrationHeatmap]", error);
       }
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     })();
   }, [companyId]);
 
