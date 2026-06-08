@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Building2,
     ShieldCheck,
@@ -36,6 +36,7 @@ const SSOConfig = () => {
         sync_groups: true
     });
     const [auditLogs, setAuditLogs] = useState([]);
+    const mountedRef = useRef(true);
 
     // Provider Form State
     const [providerForm, setProviderForm] = useState({
@@ -84,12 +85,12 @@ const SSOConfig = () => {
             if (!res.ok) throw new Error('Failed to load SSO configuration');
 
             const data = await res.json();
-            setProviders(data.providers || []);
-            setMappings(data.mappings || []);
-            if (data.settings) setSettings(data.settings);
+            if (mountedRef.current) setProviders(data.providers || []);
+            if (mountedRef.current) setMappings(data.mappings || []);
+            if (data.settings && mountedRef.current) setSettings(data.settings);
 
             // Populate form if there's an existing provider
-            if (data.providers && data.providers.length > 0) {
+            if (data.providers && data.providers.length > 0 && mountedRef.current) {
                 const current = data.providers[0];
                 setProviderForm({
                     ...current,
@@ -103,16 +104,21 @@ const SSOConfig = () => {
                     'Authorization': `Bearer ${session.access_token}`
                 }
             });
-            if (logsRes.ok) {
+            if (logsRes.ok && mountedRef.current) {
                 const logs = await logsRes.json();
                 setAuditLogs(logs || []);
             }
         } catch (err) {
-            setError(err.message);
+            if (mountedRef.current) setError(err.message);
         } finally {
-            setLoading(false);
+            if (mountedRef.current) setLoading(false);
         }
     };
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
 
     useEffect(() => {
         fetchSSOConfig();
